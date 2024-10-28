@@ -3,6 +3,7 @@
 require_once  __DIR__ . '/vendor/autoload.php';
 
 use Symfony\Component\Process\Process;
+use function Laravel\Prompts\info;
 use function Laravel\Prompts\text;
 const aliasScreen = "\e[?1049h";
 const aliasScreenEnd = "\e[?1049l";
@@ -13,7 +14,7 @@ $output = new \Laravel\Prompts\Output\ConsoleOutput();
 $argv = $argv ?? [];
 $argc = $argc ?? 0;
 if ($argc < 2) {
-    \Laravel\Prompts\error("Usage: php main.php <command>\n");
+    \Laravel\Prompts\error("Usage: php index.php <command>\n");
     exit(1);
 }
 $directory = $argv[1];
@@ -23,14 +24,21 @@ if (!is_dir($directory)) {
 }
 
 chdir($directory);
-
+// look for git folder
+if (!is_dir('.git')) {
+    \Laravel\Prompts\error("Error: not a git repository\n");
+    exit(1);
+}
 $process = new Process(['git', 'status']);
 $output->writeln("" . $process->getWorkingDirectory(), );
 $process->run();
 if (!$process->isSuccessful()) {
     $output->writeDirectly($process->getErrorOutput());
     exit(1);
+} else {
+    $output->writeDirectly($process->getOutput());
 }
+
 // Would you like to add a worktree?
 $worktree = \Laravel\Prompts\confirm('Would you like to add a worktree?');
  if (!$worktree) {
@@ -39,6 +47,10 @@ $worktree = \Laravel\Prompts\confirm('Would you like to add a worktree?');
  }
 
 // get branches
+info("Fetching branches\n");
+$fetch = new Process(['git', 'fetch', '--all']);
+$fetch->run();
+info($fetch->getOutput());
 $process = new Process(['git', 'branch', '-r']);
 $process->start();
 $branches = [];
@@ -108,8 +120,19 @@ if ($type === Process::ERR) {
     }
 }
 
-// would you like to copy the .env file?
-$env = \Laravel\Prompts\confirm('Would you like to copy the .env file?');
+$response =  \Laravel\Prompts\form()->confirm('Would you like to copy the .env file?', name: 'env')
+    ->confirm('Would you like to run composer install?', name: 'composer')
+    ->confirm('Would you like to run npm install?', name: 'npm')
+    ->confirm('Would you like to run npm run build?', name: 'npmBuild')
+    ->confirm('Would you like to run php artisan migrate?', 0, name: 'migrate')
+    ->confirm('Would you like to serve the app?', name: 'serve')
+    ->addIf(fn($res) => $res['serve'], fn() => \Laravel\Prompts\text('Enter the port to use: ', '42069', 42069), name: 'port')
+    ->submit();
+
+// [$env, $composer, $npm, $npmBuild, $migrate, $serve, $port] = $response;
+extract($response);
+
+//$env = \Laravel\Prompts\confirm('Would you like to copy the .env file?');
 if ($env) {
     $copied = copy('.env', $worktreeDirectory . '/.env');
     if(!$copied) {
@@ -121,7 +144,7 @@ if ($env) {
 chdir($worktreeDirectory);
 
 // would you like to run composer install?
-$composer = \Laravel\Prompts\confirm('Would you like to run composer install?');
+//$composer = \Laravel\Prompts\confirm('Would you like to run composer install?');
 if ($composer) {
     $process = new Process(['composer', 'install']);
     $process->start();
@@ -134,7 +157,7 @@ if ($composer) {
 }
 
 // would you like to run npm install?
-$npm = \Laravel\Prompts\confirm('Would you like to run npm install?');
+//$npm = \Laravel\Prompts\confirm('Would you like to run npm install?');
 if ($npm) {
     $process = new Process(['npm', 'install']);
     $process->start();
@@ -147,8 +170,8 @@ if ($npm) {
 }
 
 // would you like to run npm run build?
-$npm = \Laravel\Prompts\confirm('Would you like to run npm run build?');
-if ($npm) {
+//$npmBuild = \Laravel\Prompts\confirm('Would you like to run npm run build?');
+if ($npmBuild) {
     $process = new Process(['npm', 'run', 'build']);
     $process->start();
     foreach ($process as $type => $data) {
@@ -161,7 +184,7 @@ if ($npm) {
 }
 
 // would you like to run php artisan migrate?
-$migrate = \Laravel\Prompts\confirm('Would you like to run php artisan migrate?', false);
+//$migrate = \Laravel\Prompts\confirm('Would you like to run php artisan migrate?', false);
 if ($migrate) {
     $process = new Process(['php', 'artisan', 'migrate']);
     $process->start();
@@ -175,11 +198,9 @@ if ($migrate) {
 }
 
 // would you like to serve
-$serve = \Laravel\Prompts\confirm('Would you like to serve the app?', false);
+//$serve = \Laravel\Prompts\confirm('Would you like to serve the app?', false);
 if ($serve) {
-    $port = \Laravel\Prompts\text('Enter the port to use: ', '42069');
-
-    $process = new Process(['php', 'artisan', 'serve',  '--port=' . $port]);
+    $process = new Process(['php', 'artisan', 'serve', '--port=' . $port]);
     $process->start();
     foreach ($process as $type => $data) {
         \Laravel\Prompts\info($data);
@@ -189,5 +210,7 @@ if ($serve) {
         exit(1);
     }
 }
+
+info("Goodbye!\n");
 
 
